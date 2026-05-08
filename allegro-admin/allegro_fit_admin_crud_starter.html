@@ -143,15 +143,12 @@
         title: 'Grupos',
         path: '/grupos',
         idKey: 'id',
-        columns: [['id','ID'],['nombre','Nombre'],['actividad_nombre','Actividad'],['profesor_nombre','Profesor'],['dia_semana','Día'],['hora_inicio','Inicio'],['hora_fin','Fin'],['estado','Estado']],
+        columns: [['id','ID'],['nombre','Nombre'],['actividad_nombre','Actividad'],['profesor_nombre','Profesor'],['horarios_texto','Horarios'],['estado','Estado']],
         form: [
           { name: 'actividad_id', label: 'Actividad', type: 'lookup', lookup: 'actividades' },
           { name: 'profesor_id', label: 'Profesor', type: 'lookup', lookup: 'profesoresSimple' },
           { name: 'sede_id', label: 'Sede', type: 'lookup', lookup: 'sedes', allowEmpty: true },
           { name: 'nombre', label: 'Nombre', type: 'text', required: true, full: true },
-          { name: 'dia_semana', label: 'Día', type: 'select', options: ['lunes','martes','miercoles','jueves','viernes','sabado','domingo'] },
-          { name: 'hora_inicio', label: 'Hora inicio', type: 'time', required: true },
-          { name: 'hora_fin', label: 'Hora fin', type: 'time', required: true },
           { name: 'cupo_maximo', label: 'Cupo máximo', type: 'number' },
           { name: 'estado', label: 'Estado', type: 'select', options: ['activo','inactivo'] },
         ]
@@ -480,6 +477,13 @@
       const row = isEdit ? state.currentRows.find(r => Number(r[schema.idKey]) === Number(id)) || {} : {};
       document.getElementById('modalTitle').textContent = isEdit ? `Editar ${schema.title.slice(0, -1)}` : `Nuevo ${schema.title.slice(0, -1)}`;
       const form = document.getElementById('crudForm');
+      if (state.currentView === 'grupos') {
+        form.innerHTML = await renderGrupoForm(row);
+        bindGrupoHorariosForm();
+        showModal();
+        document.getElementById('saveModalBtn').onclick = saveModal;
+        return;
+      }
       form.innerHTML = await Promise.all(schema.form.map(field => renderField(field, row, !isEdit))).then(parts => parts.join(''));
       showModal();
       document.getElementById('saveModalBtn').onclick = saveModal;
@@ -558,7 +562,7 @@
 
     async function saveModal() {
       const schema = state.currentSchema;
-      const payload = collectFormFields();
+      const payload = state.currentView === 'grupos' ? collectGrupoPayload() : collectFormFields();
       schema.form.forEach(field => {
         if (field.type === 'number' && payload[field.name] !== '') payload[field.name] = Number(payload[field.name]);
       });
@@ -576,6 +580,100 @@
       } catch (e) {
         toast(e.message, 'danger');
       }
+    }
+
+    async function renderGrupoForm(row) {
+      const actividadOptions = await getLookup('actividades');
+      const profesorOptions = await getLookup('profesoresSimple');
+      const sedeOptions = await getLookup('sedes');
+      const horarios = Array.isArray(row.horarios) && row.horarios.length
+        ? row.horarios
+        : (row.dia_semana && row.hora_inicio && row.hora_fin
+          ? [{ dia_semana: row.dia_semana, hora_inicio: row.hora_inicio, hora_fin: row.hora_fin }]
+          : [{ dia_semana: 'lunes', hora_inicio: '', hora_fin: '' }]);
+
+      return `
+        ${lookupFieldHtml('actividad_id','Actividad',actividadOptions,false,'',row.actividad_id || '',true)}
+        ${lookupFieldHtml('profesor_id','Profesor',profesorOptions,false,'',row.profesor_id || '',true)}
+        ${lookupFieldHtml('sede_id','Sede',sedeOptions,true,'',row.sede_id || '',false)}
+        ${inputFieldHtml('nombre','Nombre','text',row.nombre || '','md:col-span-2','',true)}
+        ${inputFieldHtml('cupo_maximo','Cupo máximo','number',row.cupo_maximo || '')}
+        ${selectFieldHtml('estado','Estado',['activo','inactivo'],row.estado || 'activo')}
+        <div class="md:col-span-2 border rounded-2xl p-4">
+          <div class="flex items-center justify-between mb-3">
+            <div>
+              <div class="font-semibold">Horarios semanales</div>
+              <div class="text-sm text-slate-500">Agregá uno o más días para el grupo.</div>
+            </div>
+            <button type="button" id="addHorarioBtn" class="px-3 py-2 rounded-xl bg-slate-800 text-white hover:bg-slate-700">Agregar horario</button>
+          </div>
+          <div id="grupoHorariosList" class="space-y-3">
+            ${horarios.map(horario => renderGrupoHorarioRow(horario)).join('')}
+          </div>
+        </div>
+      `;
+    }
+
+    function renderGrupoHorarioRow(horario = {}) {
+      const dias = ['lunes','martes','miercoles','jueves','viernes','sabado','domingo'];
+      return `
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-3 items-end grupo-horario-row border rounded-2xl p-3">
+          <div>
+            <label class="block text-sm mb-1">Día</label>
+            <select data-horario-field="dia_semana" class="w-full border rounded-2xl px-4 py-2">
+              ${dias.map(dia => `<option value="${dia}" ${String(horario.dia_semana || '')===dia?'selected':''}>${dia}</option>`).join('')}
+            </select>
+          </div>
+          <div>
+            <label class="block text-sm mb-1">Hora inicio</label>
+            <input data-horario-field="hora_inicio" type="time" value="${escapeHtml((horario.hora_inicio || '').slice(0,5))}" class="w-full border rounded-2xl px-4 py-2">
+          </div>
+          <div>
+            <label class="block text-sm mb-1">Hora fin</label>
+            <input data-horario-field="hora_fin" type="time" value="${escapeHtml((horario.hora_fin || '').slice(0,5))}" class="w-full border rounded-2xl px-4 py-2">
+          </div>
+          <div>
+            <button type="button" class="remove-horario-btn w-full px-3 py-2 rounded-xl bg-rose-600 text-white hover:bg-rose-700">Quitar</button>
+          </div>
+        </div>
+      `;
+    }
+
+    function bindGrupoHorariosForm() {
+      document.getElementById('addHorarioBtn')?.addEventListener('click', () => {
+        const list = document.getElementById('grupoHorariosList');
+        list.insertAdjacentHTML('beforeend', renderGrupoHorarioRow({ dia_semana: 'lunes', hora_inicio: '', hora_fin: '' }));
+        bindGrupoHorarioRemoveButtons();
+      });
+      bindGrupoHorarioRemoveButtons();
+    }
+
+    function bindGrupoHorarioRemoveButtons() {
+      document.querySelectorAll('.remove-horario-btn').forEach(btn => {
+        btn.onclick = () => {
+          const rows = document.querySelectorAll('.grupo-horario-row');
+          if (rows.length === 1) {
+            toast('El grupo necesita al menos un horario', 'danger');
+            return;
+          }
+          btn.closest('.grupo-horario-row')?.remove();
+        };
+      });
+    }
+
+    function collectGrupoPayload() {
+      const payload = collectFormFields();
+      payload.horarios = Array.from(document.querySelectorAll('.grupo-horario-row')).map(row => ({
+        dia_semana: row.querySelector('[data-horario-field="dia_semana"]')?.value || '',
+        hora_inicio: row.querySelector('[data-horario-field="hora_inicio"]')?.value || '',
+        hora_fin: row.querySelector('[data-horario-field="hora_fin"]')?.value || ''
+      })).filter(horario => horario.dia_semana && horario.hora_inicio && horario.hora_fin);
+
+      if (!payload.horarios.length) {
+        throw new Error('Debes cargar al menos un horario completo.');
+      }
+
+      return payload;
     }
 
     async function deleteRow(id) {
