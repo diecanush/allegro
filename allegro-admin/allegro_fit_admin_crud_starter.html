@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Allegro Fit Admin CRUD</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { background: #f6f7fb; }
+    .hidden { display: none; }
+  </style>
+</head>
+<body class="min-h-screen text-slate-800">
+  <div class="flex min-h-screen">
+    <aside class="w-72 bg-slate-900 text-white p-5 flex flex-col gap-4">
+      <div>
+        <h1 class="text-2xl font-bold">Allegro Fit</h1>
+        <p class="text-slate-300 text-sm">Panel administrativo CRUD</p>
+      </div>
+
+      <div class="bg-slate-800 rounded-2xl p-4 space-y-2">
+        <label class="block text-sm">API base</label>
+        <input id="apiBase" class="w-full rounded-xl px-3 py-2 text-slate-900" value="https://allegro.diecanush.com.ar/allegro-api" />
+        <button id="saveApiBaseBtn" class="w-full bg-indigo-500 hover:bg-indigo-600 rounded-xl py-2 font-medium">Guardar API base</button>
+      </div>
+
+      <div class="bg-slate-800 rounded-2xl p-4 space-y-3">
+        <h2 class="font-semibold">Sesión</h2>
+        <input id="email" type="email" placeholder="Email" class="w-full rounded-xl px-3 py-2 text-slate-900" />
+        <input id="password" type="password" placeholder="Contraseña" class="w-full rounded-xl px-3 py-2 text-slate-900" />
+        <button id="loginBtn" class="w-full bg-emerald-500 hover:bg-emerald-600 rounded-xl py-2 font-medium">Ingresar</button>
+        <button id="logoutBtn" class="w-full bg-slate-700 hover:bg-slate-600 rounded-xl py-2 font-medium">Salir</button>
+        <div id="sessionInfo" class="text-sm text-slate-300"></div>
+      </div>
+
+      <nav class="flex flex-col gap-2 mt-2">
+        <button data-view="dashboard" class="nav-btn text-left px-4 py-3 rounded-2xl bg-slate-800 hover:bg-slate-700">Dashboard</button>
+        <button data-view="participantes" class="nav-btn text-left px-4 py-3 rounded-2xl bg-slate-800 hover:bg-slate-700">Participantes</button>
+        <button data-view="profesores" class="nav-btn text-left px-4 py-3 rounded-2xl bg-slate-800 hover:bg-slate-700">Profesores</button>
+        <button data-view="grupos" class="nav-btn text-left px-4 py-3 rounded-2xl bg-slate-800 hover:bg-slate-700">Grupos</button>
+        <button data-view="planes" class="nav-btn text-left px-4 py-3 rounded-2xl bg-slate-800 hover:bg-slate-700">Planes</button>
+        <button data-view="cargos" class="nav-btn text-left px-4 py-3 rounded-2xl bg-slate-800 hover:bg-slate-700">Cargos</button>
+        <button data-view="pagos" class="nav-btn text-left px-4 py-3 rounded-2xl bg-slate-800 hover:bg-slate-700">Pagos</button>
+        <button data-view="asistencias" class="nav-btn text-left px-4 py-3 rounded-2xl bg-slate-800 hover:bg-slate-700">Asistencias</button>
+      </nav>
+
+      <div class="mt-auto text-xs text-slate-400">
+        Starter para conectar con tu API REST ya armada.
+      </div>
+    </aside>
+
+    <main class="flex-1 p-6 md:p-8 overflow-auto">
+      <div id="alerts" class="mb-4"></div>
+      <div id="viewTitle" class="mb-6">
+        <h2 class="text-3xl font-bold">Dashboard</h2>
+        <p class="text-slate-500">Resumen y CRUD inicial.</p>
+      </div>
+      <div id="app"></div>
+    </main>
+  </div>
+
+  <div id="modalBackdrop" class="hidden fixed inset-0 bg-black/50 z-40"></div>
+  <div id="crudModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 overflow-auto">
+    <div class="bg-white rounded-3xl shadow-2xl w-full max-w-3xl my-8">
+      <div class="flex items-center justify-between px-6 py-4 border-b">
+        <h3 id="modalTitle" class="text-xl font-semibold">Formulario</h3>
+        <button id="closeModalBtn" class="text-slate-500 hover:text-slate-800 text-2xl leading-none">×</button>
+      </div>
+      <form id="crudForm" class="p-6 grid grid-cols-1 md:grid-cols-2 gap-4"></form>
+      <div class="px-6 pb-6 flex justify-end gap-3">
+        <button id="cancelModalBtn" class="px-4 py-2 rounded-2xl bg-slate-200 hover:bg-slate-300" type="button">Cancelar</button>
+        <button id="saveModalBtn" class="px-4 py-2 rounded-2xl bg-indigo-600 text-white hover:bg-indigo-700" type="button">Guardar</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const state = {
+      apiBase: localStorage.getItem('allegro_api_base') || 'https://allegro.diecanush.com.ar/allegro-api',
+      token: localStorage.getItem('allegro_token') || '',
+      user: JSON.parse(localStorage.getItem('allegro_user') || 'null'),
+      currentView: 'dashboard',
+      currentRows: [],
+      currentSchema: null,
+      editId: null,
+      lookupCache: {}
+    };
+
+    const schemas = {
+      participantes: {
+        title: 'Participantes',
+        path: '/participantes',
+        idKey: 'id',
+        columns: [['id', 'ID'], ['apellido', 'Apellido'], ['nombre', 'Nombre'], ['email', 'Email'], ['telefono', 'Teléfono'], ['dni', 'DNI'], ['estado', 'Estado']],
+        form: [
+          { name: 'nombre', label: 'Nombre', type: 'text', required: true },
+          { name: 'apellido', label: 'Apellido', type: 'text', required: true },
+          { name: 'email', label: 'Email', type: 'email', required: true },
+          { name: 'telefono', label: 'Teléfono', type: 'text' },
+          { name: 'password', label: 'Contraseña', type: 'password', requiredOnCreate: true },
+          { name: 'dni', label: 'DNI', type: 'text' },
+          { name: 'fecha_nacimiento', label: 'Fecha nacimiento', type: 'date' },
+          { name: 'direccion', label: 'Dirección', type: 'text' },
+          { name: 'contacto_emergencia_nombre', label: 'Contacto emergencia', type: 'text' },
+          { name: 'contacto_emergencia_telefono', label: 'Tel. emergencia', type: 'text' },
+          { name: 'apto_fisico_vencimiento', label: 'Venc. apto físico', type: 'date' },
+          { name: 'observaciones', label: 'Observaciones', type: 'textarea', full: true },
+          { name: 'estado', label: 'Estado', type: 'select', options: ['activo','inactivo'] },
+        ]
+      },
+      profesores: {
+        title: 'Profesores',
+        path: '/profesores',
+        idKey: 'id',
+        columns: [['id', 'ID'], ['apellido', 'Apellido'], ['nombre', 'Nombre'], ['email', 'Email'], ['telefono', 'Teléfono'], ['especialidad', 'Especialidad'], ['estado', 'Estado']],
+        form: [
+          { name: 'nombre', label: 'Nombre', type: 'text', required: true },
+          { name: 'apellido', label: 'Apellido', type: 'text', required: true },
+          { name: 'email', label: 'Email', type: 'email', required: true },
+          { name: 'telefono', label: 'Teléfono', type: 'text' },
+          { name: 'password', label: 'Contraseña', type: 'password', requiredOnCreate: true },
+          { name: 'especialidad', label: 'Especialidad', type: 'text' },
+          { name: 'observaciones', label: 'Observaciones', type: 'textarea', full: true },
+          { name: 'estado', label: 'Estado', type: 'select', options: ['activo','inactivo'] },
+        ]
+      },
+      planes: {
+        title: 'Planes',
+        path: '/planes',
+        idKey: 'id',
+        columns: [['id', 'ID'], ['nombre', 'Nombre'], ['importe', 'Importe'], ['periodo', 'Período'], ['cantidad_clases', 'Clases'], ['estado', 'Estado']],
+        form: [
+          { name: 'nombre', label: 'Nombre', type: 'text', required: true },
+          { name: 'descripcion', label: 'Descripción', type: 'textarea', full: true },
+          { name: 'importe', label: 'Importe', type: 'number', step: '0.01', required: true },
+          { name: 'periodo', label: 'Período', type: 'select', options: ['mensual','semanal','clase_suelta','personalizado'] },
+          { name: 'cantidad_clases', label: 'Cantidad clases', type: 'number' },
+          { name: 'mora_diaria', label: 'Mora diaria', type: 'number', step: '0.01' },
+          { name: 'estado', label: 'Estado', type: 'select', options: ['activo','inactivo'] },
+        ]
+      },
+      grupos: {
+        title: 'Grupos',
+        path: '/grupos',
+        idKey: 'id',
+        columns: [['id','ID'],['nombre','Nombre'],['actividad_nombre','Actividad'],['profesor_nombre','Profesor'],['dia_semana','Día'],['hora_inicio','Inicio'],['hora_fin','Fin'],['estado','Estado']],
+        form: [
+          { name: 'actividad_id', label: 'Actividad', type: 'lookup', lookup: 'actividades' },
+          { name: 'profesor_id', label: 'Profesor', type: 'lookup', lookup: 'profesoresSimple' },
+          { name: 'sede_id', label: 'Sede', type: 'lookup', lookup: 'sedes', allowEmpty: true },
+          { name: 'nombre', label: 'Nombre', type: 'text', required: true, full: true },
+          { name: 'dia_semana', label: 'Día', type: 'select', options: ['lunes','martes','miercoles','jueves','viernes','sabado','domingo'] },
+          { name: 'hora_inicio', label: 'Hora inicio', type: 'time', required: true },
+          { name: 'hora_fin', label: 'Hora fin', type: 'time', required: true },
+          { name: 'cupo_maximo', label: 'Cupo máximo', type: 'number' },
+          { name: 'estado', label: 'Estado', type: 'select', options: ['activo','inactivo'] },
+        ]
+      },
+      cargos: {
+        title: 'Cargos',
+        path: '/cargos',
+        idKey: 'id',
+        columns: [['id','ID'],['apellido','Apellido'],['nombre','Nombre'],['concepto','Concepto'],['periodo','Período'],['fecha_vencimiento','Vence'],['saldo','Saldo'],['estado','Estado']],
+        form: [
+          { name: 'participante_id', label: 'Participante', type: 'lookup', lookup: 'participantesSimple' },
+          { name: 'participante_plan_id', label: 'Plan asignado', type: 'lookup', lookup: 'participantePlanes', allowEmpty: true },
+          { name: 'concepto', label: 'Concepto', type: 'text', required: true, full: true },
+          { name: 'periodo', label: 'Período', type: 'text' },
+          { name: 'fecha_generacion', label: 'Fecha generación', type: 'date', required: true },
+          { name: 'fecha_vencimiento', label: 'Fecha vencimiento', type: 'date', required: true },
+          { name: 'importe', label: 'Importe', type: 'number', step: '0.01', required: true },
+          { name: 'recargo', label: 'Recargo', type: 'number', step: '0.01' },
+          { name: 'bonificacion', label: 'Bonificación', type: 'number', step: '0.01' },
+          { name: 'saldo', label: 'Saldo', type: 'number', step: '0.01' },
+          { name: 'estado', label: 'Estado', type: 'select', options: ['pendiente','parcial','pagado','vencido','anulado'] },
+          { name: 'observaciones', label: 'Observaciones', type: 'textarea', full: true },
+        ]
+      },
+      asistencias: {
+        title: 'Asistencias',
+        path: '/asistencias',
+        idKey: 'id',
+        columns: [['id','ID'],['clase_fecha','Fecha'],['apellido','Apellido'],['nombre','Nombre'],['estado','Estado'],['hora_registro','Registrada'],['observaciones','Obs.']],
+        form: [
+          { name: 'clase_id', label: 'Clase', type: 'lookup', lookup: 'clasesSimple' },
+          { name: 'participante_id', label: 'Participante', type: 'lookup', lookup: 'participantesSimple' },
+          { name: 'estado', label: 'Estado', type: 'select', options: ['presente','ausente','justificada','recupero'] },
+          { name: 'observaciones', label: 'Observaciones', type: 'textarea', full: true },
+        ]
+      },
+      pagos: {
+        title: 'Pagos',
+        path: '/pagos',
+        idKey: 'id',
+        columns: [['id','ID'],['apellido','Apellido'],['nombre','Nombre'],['fecha_pago','Fecha pago'],['importe','Importe'],['medio_pago','Medio'],['estado','Estado']],
+        customRender: renderPagosView
+      }
+    };
+
+    const apiBaseInput = document.getElementById('apiBase');
+    const sessionInfo = document.getElementById('sessionInfo');
+    const app = document.getElementById('app');
+    const alerts = document.getElementById('alerts');
+    apiBaseInput.value = state.apiBase;
+
+    document.getElementById('saveApiBaseBtn').addEventListener('click', () => {
+      state.apiBase = apiBaseInput.value.trim().replace(/\/$/, '');
+      localStorage.setItem('allegro_api_base', state.apiBase);
+      toast('API base guardada', 'success');
+    });
+
+    document.getElementById('loginBtn').addEventListener('click', login);
+    document.getElementById('logoutBtn').addEventListener('click', logout);
+    document.getElementById('closeModalBtn').addEventListener('click', closeModal);
+    document.getElementById('cancelModalBtn').addEventListener('click', closeModal);
+    document.getElementById('saveModalBtn').addEventListener('click', saveModal);
+    document.getElementById('modalBackdrop').addEventListener('click', closeModal);
+
+    document.querySelectorAll('.nav-btn').forEach(btn => btn.addEventListener('click', () => navigate(btn.dataset.view)));
+
+    updateSessionInfo();
+    navigate('dashboard');
+
+    async function login() {
+      const email = document.getElementById('email').value.trim();
+      const password = document.getElementById('password').value;
+      try {
+        const res = await apiFetch('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }, false);
+        state.token = res.data.token;
+        state.user = res.data.user;
+        localStorage.setItem('allegro_token', state.token);
+        localStorage.setItem('allegro_user', JSON.stringify(state.user));
+        updateSessionInfo();
+        toast('Sesión iniciada', 'success');
+        navigate('dashboard');
+      } catch (e) {
+        toast(e.message, 'danger');
+      }
+    }
+
+    async function logout() {
+      try { if (state.token) await apiFetch('/auth/logout', { method: 'POST' }); } catch (_) {}
+      state.token = '';
+      state.user = null;
+      localStorage.removeItem('allegro_token');
+      localStorage.removeItem('allegro_user');
+      updateSessionInfo();
+      toast('Sesión cerrada', 'success');
+      navigate('dashboard');
+    }
+
+    function updateSessionInfo() {
+      sessionInfo.textContent = state.user ? `${state.user.nombre} ${state.user.apellido} (${state.user.rol})` : 'Sin sesión';
+    }
+
+    async function navigate(view) {
+      state.currentView = view;
+      setTitle(view);
+      if (view === 'dashboard') return renderDashboard();
+      if (schemas[view]) return renderCrudView(view);
+      app.innerHTML = `<div class="bg-white rounded-3xl shadow p-6">Vista en construcción: ${view}</div>`;
+    }
+
+    function setTitle(view) {
+      const titleEl = document.getElementById('viewTitle');
+      const titles = {
+        dashboard: ['Dashboard', 'Resumen general del sistema.'],
+        participantes: ['Participantes', 'Alta, edición y baja de participantes.'],
+        profesores: ['Profesores', 'Alta, edición y baja de profesores.'],
+        planes: ['Planes', 'Alta, edición y baja de planes.'],
+        grupos: ['Grupos', 'Alta, edición y baja de grupos.'],
+        cargos: ['Cargos', 'Alta, edición y baja de cargos.'],
+        pagos: ['Pagos', 'Listado y registro de pagos.'],
+        asistencias: ['Asistencias', 'Registro y consulta de asistencias.'],
+      };
+      const [title, subtitle] = titles[view] || ['Panel', ''];
+      titleEl.innerHTML = `<h2 class="text-3xl font-bold">${title}</h2><p class="text-slate-500">${subtitle}</p>`;
+    }
+
+    async function renderDashboard() {
+      try {
+        const res = await apiFetch('/dashboard');
+        const k = res.data.kpis;
+        app.innerHTML = `
+          <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+            ${kpi('Participantes activos', k.participantes_activos)}
+            ${kpi('Profesores activos', k.profesores_activos)}
+            ${kpi('Grupos activos', k.grupos_activos)}
+            ${kpi('Clases hoy', k.clases_hoy)}
+            ${kpi('Asistencias hoy', k.asistencias_hoy)}
+            ${kpi('Cargos pendientes', k.cargos_pendientes)}
+            ${kpi('Saldo pendiente', money(k.saldo_pendiente))}
+            ${kpi('Pagos del mes', money(k.pagos_mes))}
+          </div>`;
+      } catch (e) {
+        app.innerHTML = `<div class="bg-red-50 text-red-700 rounded-2xl p-4">${e.message}</div>`;
+      }
+    }
+
+    async function renderCrudView(key) {
+      const schema = schemas[key];
+      state.currentSchema = schema;
+      app.innerHTML = `<div class="bg-white rounded-3xl shadow p-6">Cargando...</div>`;
+      try {
+        const res = await apiFetch(schema.path);
+        state.currentRows = res.data || [];
+        if (schema.customRender) return schema.customRender();
+        app.innerHTML = `
+          <div class="bg-white rounded-3xl shadow p-6">
+            <div class="flex flex-col md:flex-row gap-3 md:items-center md:justify-between mb-4">
+              <div class="flex-1">
+                <input id="crudSearch" class="w-full border rounded-2xl px-4 py-2" placeholder="Buscar..." />
+              </div>
+              <button id="newBtn" class="px-4 py-2 rounded-2xl bg-indigo-600 text-white hover:bg-indigo-700">Nuevo</button>
+            </div>
+            <div class="overflow-auto">
+              <table class="min-w-full text-sm">
+                <thead>
+                  <tr class="border-b">
+                    ${schema.columns.map(c => `<th class="text-left px-3 py-3 font-semibold">${c[1]}</th>`).join('')}
+                    <th class="text-left px-3 py-3 font-semibold">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody id="crudTableBody"></tbody>
+              </table>
+            </div>
+          </div>`;
+        document.getElementById('newBtn').addEventListener('click', () => openModal(null));
+        document.getElementById('crudSearch').addEventListener('input', renderCrudTable);
+        renderCrudTable();
+      } catch (e) {
+        app.innerHTML = `<div class="bg-red-50 text-red-700 rounded-2xl p-4">${e.message}</div>`;
+      }
+    }
+
+    function renderCrudTable() {
+      const schema = state.currentSchema;
+      const tbody = document.getElementById('crudTableBody');
+      if (!tbody) return;
+      const q = (document.getElementById('crudSearch')?.value || '').toLowerCase();
+      const rows = state.currentRows.filter(row => JSON.stringify(row).toLowerCase().includes(q));
+      tbody.innerHTML = rows.map(row => `
+        <tr class="border-b hover:bg-slate-50">
+          ${schema.columns.map(([key]) => `<td class="px-3 py-3">${formatValue(row[key])}</td>`).join('')}
+          <td class="px-3 py-3">
+            <div class="flex gap-2">
+              <button class="edit-btn px-3 py-1 rounded-xl bg-amber-500 text-white hover:bg-amber-600" data-id="${row[schema.idKey]}">Editar</button>
+              <button class="delete-btn px-3 py-1 rounded-xl bg-rose-600 text-white hover:bg-rose-700" data-id="${row[schema.idKey]}">Eliminar</button>
+            </div>
+          </td>
+        </tr>`).join('');
+      tbody.querySelectorAll('.edit-btn').forEach(btn => btn.addEventListener('click', () => openModal(btn.dataset.id)));
+      tbody.querySelectorAll('.delete-btn').forEach(btn => btn.addEventListener('click', () => deleteRow(btn.dataset.id)));
+    }
+
+    async function renderPagosView() {
+      app.innerHTML = `
+        <div class="space-y-4">
+          <div class="bg-white rounded-3xl shadow p-6">
+            <div class="flex flex-col md:flex-row gap-3 md:items-center md:justify-between mb-4">
+              <div class="flex-1">
+                <input id="crudSearch" class="w-full border rounded-2xl px-4 py-2" placeholder="Buscar pagos..." />
+              </div>
+              <button id="newPagoBtn" class="px-4 py-2 rounded-2xl bg-indigo-600 text-white hover:bg-indigo-700">Nuevo pago</button>
+            </div>
+            <div id="pagosList" class="space-y-3"></div>
+          </div>
+        </div>`;
+      document.getElementById('crudSearch').addEventListener('input', renderPagosCards);
+      document.getElementById('newPagoBtn').addEventListener('click', openPagoModal);
+      renderPagosCards();
+    }
+
+    function renderPagosCards() {
+      const q = (document.getElementById('crudSearch')?.value || '').toLowerCase();
+      const rows = state.currentRows.filter(row => JSON.stringify(row).toLowerCase().includes(q));
+      const list = document.getElementById('pagosList');
+      list.innerHTML = rows.map(r => `
+        <div class="border rounded-2xl p-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+          <div>
+            <div class="font-semibold">${r.apellido}, ${r.nombre}</div>
+            <div class="text-sm text-slate-500">${r.fecha_pago} · ${r.medio_pago} · ${r.estado}</div>
+            <div class="text-sm">Referencia: ${r.referencia || ''}</div>
+          </div>
+          <div class="flex items-center gap-3">
+            <div class="text-xl font-bold">${money(r.importe)}</div>
+            <button class="view-pago px-3 py-2 rounded-xl bg-slate-800 text-white" data-id="${r.id}">Ver detalle</button>
+            <button class="delete-pago px-3 py-2 rounded-xl bg-rose-600 text-white" data-id="${r.id}">Eliminar</button>
+          </div>
+        </div>`).join('');
+      list.querySelectorAll('.view-pago').forEach(btn => btn.addEventListener('click', () => viewPago(btn.dataset.id)));
+      list.querySelectorAll('.delete-pago').forEach(btn => btn.addEventListener('click', () => deletePago(btn.dataset.id)));
+    }
+
+    async function openPagoModal() {
+      const participantes = await getLookup('participantesSimple');
+      const cargos = await getLookup('cargosSimple');
+      state.editId = null;
+      document.getElementById('modalTitle').textContent = 'Nuevo pago';
+      document.getElementById('crudForm').innerHTML = `
+        ${lookupFieldHtml('participante_id','Participante',participantes,false,'md:col-span-2')}
+        ${inputFieldHtml('fecha_pago','Fecha pago','datetime-local','','md:col-span-1')}
+        ${inputFieldHtml('importe','Importe','number','','md:col-span-1','0.01')}
+        ${selectFieldHtml('medio_pago','Medio pago',['efectivo','transferencia','mercadopago','tarjeta','otro'])}
+        ${selectFieldHtml('estado','Estado',['aprobado','pendiente_validacion','rechazado','anulado'])}
+        ${inputFieldHtml('referencia','Referencia','text','','md:col-span-2')}
+        <div class="md:col-span-2">
+          <label class="block text-sm mb-1">Aplicar a cargo</label>
+          <select data-field="cargo_id" class="w-full border rounded-2xl px-4 py-2">
+            <option value="">-- Sin aplicar --</option>
+            ${cargos.map(o => `<option value="${o.value}">${o.label}</option>`).join('')}
+          </select>
+        </div>
+        ${textareaFieldHtml('observaciones','Observaciones','','md:col-span-2')}`;
+      showModal();
+      document.getElementById('saveModalBtn').onclick = savePagoModal;
+    }
+
+    async function savePagoModal() {
+      const payload = collectFormFields();
+      const cargoId = payload.cargo_id ? Number(payload.cargo_id) : null;
+      delete payload.cargo_id;
+      payload.participante_id = Number(payload.participante_id || 0);
+      payload.importe = Number(payload.importe || 0);
+      if (payload.fecha_pago && payload.fecha_pago.length === 16) payload.fecha_pago = payload.fecha_pago.replace('T',' ') + ':00';
+      if (cargoId) payload.detalles = [{ cargo_id: cargoId, importe_aplicado: payload.importe }];
+      try {
+        await apiFetch('/pagos', { method: 'POST', body: JSON.stringify(payload) });
+        toast('Pago registrado', 'success');
+        closeModal();
+        await renderCrudView('pagos');
+      } catch (e) {
+        toast(e.message, 'danger');
+      } finally {
+        document.getElementById('saveModalBtn').onclick = saveModal;
+      }
+    }
+
+    async function viewPago(id) {
+      try {
+        const res = await apiFetch(`/pagos/${id}`);
+        const p = res.data;
+        app.insertAdjacentHTML('afterbegin', `
+          <div id="pagoDetalleCard" class="mb-4 bg-white rounded-3xl shadow p-6 border-2 border-indigo-200">
+            <div class="flex justify-between items-start gap-4">
+              <div>
+                <h3 class="text-xl font-semibold">Pago #${p.id}</h3>
+                <p class="text-slate-500">${p.nombre} ${p.apellido} · ${p.fecha_pago}</p>
+                <p class="mt-2"><strong>Importe:</strong> ${money(p.importe)} · <strong>Medio:</strong> ${p.medio_pago} · <strong>Estado:</strong> ${p.estado}</p>
+                <p><strong>Referencia:</strong> ${p.referencia || ''}</p>
+                <p><strong>Observaciones:</strong> ${p.observaciones || ''}</p>
+              </div>
+              <button onclick="document.getElementById('pagoDetalleCard')?.remove()" class="px-3 py-2 rounded-xl bg-slate-200">Cerrar</button>
+            </div>
+            <div class="mt-4">
+              <h4 class="font-semibold mb-2">Aplicaciones</h4>
+              ${p.detalles?.length ? `<ul class="list-disc ml-5">${p.detalles.map(d => `<li>${d.concepto} (${d.periodo || ''}) - ${money(d.importe_aplicado)}</li>`).join('')}</ul>` : `<p class="text-slate-500">Sin aplicaciones.</p>`}
+            </div>
+          </div>`);
+      } catch (e) {
+        toast(e.message, 'danger');
+      }
+    }
+
+    async function deletePago(id) {
+      if (!confirm('¿Eliminar este pago?')) return;
+      try {
+        await apiFetch(`/pagos/${id}`, { method: 'DELETE' });
+        toast('Pago eliminado', 'success');
+        await renderCrudView('pagos');
+      } catch (e) {
+        toast(e.message, 'danger');
+      }
+    }
+
+    async function openModal(id) {
+      const schema = state.currentSchema;
+      const isEdit = !!id;
+      state.editId = isEdit ? Number(id) : null;
+      const row = isEdit ? state.currentRows.find(r => Number(r[schema.idKey]) === Number(id)) || {} : {};
+      document.getElementById('modalTitle').textContent = isEdit ? `Editar ${schema.title.slice(0, -1)}` : `Nuevo ${schema.title.slice(0, -1)}`;
+      const form = document.getElementById('crudForm');
+      form.innerHTML = await Promise.all(schema.form.map(field => renderField(field, row, !isEdit))).then(parts => parts.join(''));
+      showModal();
+      document.getElementById('saveModalBtn').onclick = saveModal;
+    }
+
+    async function renderField(field, row, isCreate) {
+      const value = row[field.name] ?? '';
+      const required = field.required || (isCreate && field.requiredOnCreate);
+      const fullClass = field.full ? 'md:col-span-2' : '';
+      if (field.type === 'textarea') return textareaFieldHtml(field.name, field.label, value, fullClass, required);
+      if (field.type === 'select') return selectFieldHtml(field.name, field.label, field.options, value, fullClass, required);
+      if (field.type === 'lookup') {
+        const options = await getLookup(field.lookup);
+        return lookupFieldHtml(field.name, field.label, options, field.allowEmpty, fullClass, value, required);
+      }
+      return inputFieldHtml(field.name, field.label, field.type || 'text', value, fullClass, field.step, required);
+    }
+
+    function inputFieldHtml(name,label,type,value='',extraClass='',step='',required=false) {
+      return `<div class="${extraClass}"><label class="block text-sm mb-1">${label}</label><input data-field="${name}" type="${type}" value="${escapeHtml(value)}" class="w-full border rounded-2xl px-4 py-2" ${step ? `step="${step}"` : ''} ${required ? 'required' : ''}></div>`;
+    }
+
+    function textareaFieldHtml(name,label,value='',extraClass='',required=false) {
+      return `<div class="${extraClass}"><label class="block text-sm mb-1">${label}</label><textarea data-field="${name}" class="w-full border rounded-2xl px-4 py-2" ${required ? 'required' : ''}>${escapeHtml(value)}</textarea></div>`;
+    }
+
+    function selectFieldHtml(name,label,options,value='',extraClass='',required=false) {
+      return `<div class="${extraClass}"><label class="block text-sm mb-1">${label}</label><select data-field="${name}" class="w-full border rounded-2xl px-4 py-2" ${required ? 'required' : ''}>${options.map(o => `<option value="${o}" ${String(value)===String(o)?'selected':''}>${o}</option>`).join('')}</select></div>`;
+    }
+
+    function lookupFieldHtml(name,label,options,allowEmpty=false,extraClass='',value='',required=false) {
+      return `<div class="${extraClass}"><label class="block text-sm mb-1">${label}</label><select data-field="${name}" class="w-full border rounded-2xl px-4 py-2" ${required ? 'required' : ''}>${allowEmpty ? '<option value="">-- Ninguno --</option>' : ''}${options.map(o => `<option value="${o.value}" ${String(value)===String(o.value)?'selected':''}>${escapeHtml(o.label)}</option>`).join('')}</select></div>`;
+    }
+
+    async function getLookup(key) {
+      if (state.lookupCache[key]) return state.lookupCache[key];
+      let options = [];
+      if (key === 'actividades') {
+        const res = await apiFetch('/actividades');
+        options = (res.data || []).map(r => ({ value: r.id, label: r.nombre }));
+      }
+      if (key === 'profesoresSimple') {
+        const res = await apiFetch('/profesores');
+        options = (res.data || []).map(r => ({ value: r.id, label: `${r.apellido}, ${r.nombre}` }));
+      }
+      if (key === 'participantesSimple') {
+        const res = await apiFetch('/participantes');
+        options = (res.data || []).map(r => ({ value: r.id, label: `${r.apellido}, ${r.nombre}` }));
+      }
+      if (key === 'sedes') {
+        options = [{ value: 1, label: 'Sede Principal' }];
+      }
+      if (key === 'participantePlanes') {
+        const res = await apiFetch('/participante-planes');
+        options = (res.data || []).map(r => ({ value: r.id, label: `${r.apellido}, ${r.nombre} - ${r.plan_nombre}` }));
+      }
+      if (key === 'clasesSimple') {
+        const res = await apiFetch('/clases');
+        options = (res.data || []).map(r => ({ value: r.id, label: `${r.fecha} - ${r.grupo_nombre || r.actividad_nombre || ('Clase #' + r.id)}` }));
+      }
+      if (key === 'cargosSimple') {
+        const res = await apiFetch('/cargos');
+        options = (res.data || []).filter(r => Number(r.saldo) > 0).map(r => ({ value: r.id, label: `${r.apellido}, ${r.nombre} - ${r.concepto} - ${money(r.saldo)}` }));
+      }
+      state.lookupCache[key] = options;
+      return options;
+    }
+
+    function collectFormFields() {
+      const payload = {};
+      document.querySelectorAll('#crudForm [data-field]').forEach(el => {
+        payload[el.dataset.field] = el.value;
+      });
+      return payload;
+    }
+
+    async function saveModal() {
+      const schema = state.currentSchema;
+      const payload = collectFormFields();
+      schema.form.forEach(field => {
+        if (field.type === 'number' && payload[field.name] !== '') payload[field.name] = Number(payload[field.name]);
+      });
+      if (state.editId && !payload.password) delete payload.password;
+      try {
+        if (state.editId) {
+          await apiFetch(`${schema.path}/${state.editId}`, { method: 'PUT', body: JSON.stringify(payload) });
+          toast('Registro actualizado', 'success');
+        } else {
+          await apiFetch(schema.path, { method: 'POST', body: JSON.stringify(payload) });
+          toast('Registro creado', 'success');
+        }
+        closeModal();
+        await renderCrudView(state.currentView);
+      } catch (e) {
+        toast(e.message, 'danger');
+      }
+    }
+
+    async function deleteRow(id) {
+      const schema = state.currentSchema;
+      if (!confirm('¿Eliminar este registro?')) return;
+      try {
+        await apiFetch(`${schema.path}/${id}`, { method: 'DELETE' });
+        toast('Registro eliminado', 'success');
+        await renderCrudView(state.currentView);
+      } catch (e) {
+        toast(e.message, 'danger');
+      }
+    }
+
+    function showModal() {
+      document.getElementById('modalBackdrop').classList.remove('hidden');
+      document.getElementById('crudModal').classList.remove('hidden');
+    }
+
+    function closeModal() {
+      document.getElementById('modalBackdrop').classList.add('hidden');
+      document.getElementById('crudModal').classList.add('hidden');
+    }
+
+    function toast(message, type='success') {
+      const color = type === 'success' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-rose-50 text-rose-700 border-rose-200';
+      alerts.innerHTML = `<div class="border ${color} rounded-2xl px-4 py-3">${message}</div>`;
+      setTimeout(() => { alerts.innerHTML = ''; }, 3500);
+    }
+
+    async function apiFetch(path, options = {}, requireAuth = true) {
+      const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
+      if (requireAuth && state.token) headers.Authorization = `Bearer ${state.token}`;
+      const res = await fetch(`${state.apiBase}${path}`, { ...options, headers });
+      const text = await res.text();
+      let data = null;
+      try { data = text ? JSON.parse(text) : null; } catch { throw new Error(text || 'Respuesta inválida'); }
+      if (!res.ok || data?.ok === false) throw new Error(data?.message || 'Error en la solicitud');
+      return data;
+    }
+
+    function formatValue(v) {
+      if (v === null || v === undefined) return '';
+      if (typeof v === 'number' && !Number.isInteger(v)) return v.toFixed(2);
+      return escapeHtml(String(v));
+    }
+
+    function escapeHtml(str) {
+      return String(str)
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#039;');
+    }
+
+    function money(v) {
+      return new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 }).format(Number(v || 0));
+    }
+
+    function kpi(label, value) {
+      return `<div class="bg-white rounded-3xl shadow p-5"><div class="text-sm text-slate-500">${label}</div><div class="text-3xl font-bold mt-2">${value}</div></div>`;
+    }
+  </script>
+</body>
+</html>
