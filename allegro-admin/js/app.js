@@ -29,7 +29,7 @@ function bindNav() {
       if (view === "dashboard") await renderDashboard();
       if (view === "participantes") await renderParticipantes();
       if (view === "profesores") renderPlaceholder("Profesores");
-      if (view === "grupos") renderPlaceholder("Grupos");
+      if (view === "grupos") await renderGrupos();
       if (view === "asistencias") await renderAsistencias();
       if (view === "pagos") renderPlaceholder("Pagos");
     });
