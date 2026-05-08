@@ -85,6 +85,7 @@ $router->add('PUT', '/clases/{id}', [ClasesController::class, 'update']);
 $router->add('DELETE', '/clases/{id}', [ClasesController::class, 'delete']);
 
 $router->add('GET', '/asistencias', [AsistenciasController::class, 'index']);
+$router->add('GET', '/asistencias/matriz', [AsistenciasController::class, 'matrix']);
 $router->add('POST', '/asistencias', [AsistenciasController::class, 'store']);
 $router->add('POST', '/asistencias/bulk', [AsistenciasController::class, 'storeBulk']);
 $router->add('DELETE', '/asistencias/{id}', [AsistenciasController::class, 'delete']);

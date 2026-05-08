@@ -78,8 +78,10 @@ class MiCuentaController
             ORDER BY FIELD(g.dia_semana,'lunes','martes','miercoles','jueves','viernes','sabado','domingo'), g.hora_inicio
         ");
         $stmt->execute(['participante_id' => $participante['id']]);
+        $rows = $stmt->fetchAll();
+        self::adjuntarHorariosDeGrupo($db, $rows, 'grupo_id');
 
-        Response::success($stmt->fetchAll(), 'Mis grupos');
+        Response::success($rows, 'Mis grupos');
     }
 
     public static function misAsistencias(): void
@@ -322,5 +324,38 @@ class MiCuentaController
         }
 
         return $participante;
+    }
+
+    private static function adjuntarHorariosDeGrupo(PDO $db, array &$rows, string $groupIdKey): void
+    {
+        if (!$rows) {
+            return;
+        }
+
+        $grupoIds = [];
+        foreach ($rows as $row) {
+            $grupoIds[] = (int)($row[$groupIdKey] ?? 0);
+        }
+
+        $horariosPorGrupo = GruposController::horariosPorGrupo($db, $grupoIds);
+
+        foreach ($rows as &$row) {
+            $grupoId = (int)($row[$groupIdKey] ?? 0);
+            $horarios = $horariosPorGrupo[$grupoId] ?? [];
+
+            if (!$horarios && !empty($row['dia_semana']) && !empty($row['hora_inicio']) && !empty($row['hora_fin'])) {
+                $horarios = [[
+                    'id' => null,
+                    'dia_semana' => $row['dia_semana'],
+                    'hora_inicio' => $row['hora_inicio'],
+                    'hora_fin' => $row['hora_fin']
+                ]];
+            }
+
+            $row['horarios'] = $horarios;
+            $row['horarios_texto'] = implode(', ', array_map(function ($horario) {
+                return $horario['dia_semana'] . ' ' . substr($horario['hora_inicio'], 0, 5) . '-' . substr($horario['hora_fin'], 0, 5);
+            }, $horarios));
+        }
     }
 }

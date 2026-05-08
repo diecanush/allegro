@@ -28,17 +28,14 @@ class InscripcionesController
                 i.observaciones,
                 i.fecha_alta,
                 i.fecha_actualizacion,
-
                 u.nombre,
                 u.apellido,
                 u.email,
                 u.telefono,
-
                 g.nombre AS grupo_nombre,
                 g.dia_semana,
                 g.hora_inicio,
                 g.hora_fin,
-
                 a.id AS actividad_id,
                 a.nombre AS actividad_nombre
             FROM inscripciones i
@@ -71,7 +68,10 @@ class InscripcionesController
         $stmt = $db->prepare($sql);
         $stmt->execute($params);
 
-        Response::success($stmt->fetchAll(), 'Listado de inscripciones');
+        $rows = $stmt->fetchAll();
+        self::adjuntarHorariosDeGrupo($db, $rows, 'grupo_id');
+
+        Response::success($rows, 'Listado de inscripciones');
     }
 
     public static function show($id): void
@@ -104,32 +104,35 @@ class InscripcionesController
         $row = $stmt->fetch();
 
         if (!$row) {
-            Response::error('Inscripción no encontrada', 404);
+            Response::error('Inscripcion no encontrada', 404);
         }
 
-        Response::success($row, 'Inscripción encontrada');
+        $rows = [$row];
+        self::adjuntarHorariosDeGrupo($db, $rows, 'grupo_id');
+
+        Response::success($rows[0], 'Inscripcion encontrada');
     }
 
     public static function store(): void
     {
         requireAuth(['admin', 'profesor']);
-    
+
         $db = DB::get();
-    
+
         try {
             $data = Request::body();
-    
+
             $participante_id = (int)($data['participante_id'] ?? 0);
             $grupo_id = (int)($data['grupo_id'] ?? 0);
             $fecha_inscripcion = trim($data['fecha_inscripcion'] ?? '');
             $fecha_baja = trim($data['fecha_baja'] ?? '');
             $estado = $data['estado'] ?? 'activa';
             $observaciones = $data['observaciones'] ?? null;
-    
+
             if ($participante_id <= 0 || $grupo_id <= 0 || $fecha_inscripcion === '') {
                 Response::error('participante_id, grupo_id y fecha_inscripcion son obligatorios', 422, $data);
             }
-    
+
             $stmt = $db->prepare("
                 INSERT INTO inscripciones (
                     participante_id,
@@ -147,7 +150,7 @@ class InscripcionesController
                     :observaciones
                 )
             ");
-    
+
             $stmt->execute([
                 'participante_id' => $participante_id,
                 'grupo_id' => $grupo_id,
@@ -156,17 +159,16 @@ class InscripcionesController
                 'estado' => $estado,
                 'observaciones' => $observaciones
             ]);
-    
+
             Response::success([
                 'id' => (int)$db->lastInsertId()
-            ], 'Inscripción creada', 201);
-    
+            ], 'Inscripcion creada', 201);
         } catch (PDOException $e) {
             if ((string)$e->getCode() === '23000') {
-                Response::error('Participante o grupo inexistente, o inscripción duplicada', 422, $e->getMessage());
+                Response::error('Participante o grupo inexistente, o inscripcion duplicada', 422, $e->getMessage());
             }
-    
-            Response::error('Error al crear inscripción', 500, $e->getMessage());
+
+            Response::error('Error al crear inscripcion', 500, $e->getMessage());
         } catch (Throwable $e) {
             Response::error('Error inesperado', 500, $e->getMessage());
         }
@@ -182,7 +184,7 @@ class InscripcionesController
         $data = json_decode($raw, true);
 
         if (!is_array($data)) {
-            Response::error('JSON inválido o body vacío', 422, [
+            Response::error('JSON invalido o body vacio', 422, [
                 'raw' => $raw,
                 'json_error' => json_last_error_msg()
             ]);
@@ -222,17 +224,16 @@ class InscripcionesController
             ]);
 
             if ($stmt->rowCount() === 0) {
-                Response::error('Inscripción no encontrada o sin cambios', 404);
+                Response::error('Inscripcion no encontrada o sin cambios', 404);
             }
 
-            Response::success([], 'Inscripción actualizada');
-
+            Response::success([], 'Inscripcion actualizada');
         } catch (PDOException $e) {
             if ((string)$e->getCode() === '23000') {
-                Response::error('Participante o grupo inexistente, o inscripción duplicada', 422, $e->getMessage());
+                Response::error('Participante o grupo inexistente, o inscripcion duplicada', 422, $e->getMessage());
             }
 
-            Response::error('Error al actualizar inscripción', 500, $e->getMessage());
+            Response::error('Error al actualizar inscripcion', 500, $e->getMessage());
         }
     }
 
@@ -247,12 +248,12 @@ class InscripcionesController
             $stmt->execute(['id' => $id]);
 
             if ($stmt->rowCount() === 0) {
-                Response::error('Inscripción no encontrada', 404);
+                Response::error('Inscripcion no encontrada', 404);
             }
 
-            Response::success([], 'Inscripción eliminada');
+            Response::success([], 'Inscripcion eliminada');
         } catch (PDOException $e) {
-            Response::error('Error al eliminar inscripción', 500, $e->getMessage());
+            Response::error('Error al eliminar inscripcion', 500, $e->getMessage());
         }
     }
 
@@ -313,6 +314,42 @@ class InscripcionesController
         ");
         $stmt->execute(['participante_id' => $participanteId]);
 
-        Response::success($stmt->fetchAll(), 'Grupos del participante');
+        $rows = $stmt->fetchAll();
+        self::adjuntarHorariosDeGrupo($db, $rows, 'grupo_id');
+
+        Response::success($rows, 'Grupos del participante');
+    }
+
+    private static function adjuntarHorariosDeGrupo(PDO $db, array &$rows, string $groupIdKey): void
+    {
+        if (!$rows) {
+            return;
+        }
+
+        $grupoIds = [];
+        foreach ($rows as $row) {
+            $grupoIds[] = (int)($row[$groupIdKey] ?? 0);
+        }
+
+        $horariosPorGrupo = GruposController::horariosPorGrupo($db, $grupoIds);
+
+        foreach ($rows as &$row) {
+            $grupoId = (int)($row[$groupIdKey] ?? 0);
+            $horarios = $horariosPorGrupo[$grupoId] ?? [];
+
+            if (!$horarios && !empty($row['dia_semana']) && !empty($row['hora_inicio']) && !empty($row['hora_fin'])) {
+                $horarios = [[
+                    'id' => null,
+                    'dia_semana' => $row['dia_semana'],
+                    'hora_inicio' => $row['hora_inicio'],
+                    'hora_fin' => $row['hora_fin']
+                ]];
+            }
+
+            $row['horarios'] = $horarios;
+            $row['horarios_texto'] = implode(', ', array_map(function ($horario) {
+                return $horario['dia_semana'] . ' ' . substr($horario['hora_inicio'], 0, 5) . '-' . substr($horario['hora_fin'], 0, 5);
+            }, $horarios));
+        }
     }
 }
