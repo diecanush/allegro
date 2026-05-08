@@ -25,9 +25,7 @@ CREATE TABLE IF NOT EXISTS grupo_horarios (
     hora_fin TIME NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    CONSTRAINT fk_grupo_horarios_grupo
-        FOREIGN KEY (grupo_id) REFERENCES grupos(id)
-        ON DELETE CASCADE,
+    KEY idx_grupo_horarios_grupo_id (grupo_id),
     CONSTRAINT uq_grupo_horario
         UNIQUE KEY (grupo_id, dia_semana, hora_inicio, hora_fin)
 );
