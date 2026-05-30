@@ -112,6 +112,7 @@ $router->add('DELETE', '/participante-planes/{id}', [ParticipantePlanesControlle
 
 $router->add('GET', '/cargos', [CargosController::class, 'index']);
 $router->add('POST', '/cargos', [CargosController::class, 'store']);
+$router->add('POST', '/cargos/generar-mensuales', [CargosController::class, 'generarMensuales']);
 $router->add('PUT', '/cargos/{id}', [CargosController::class, 'update']);
 $router->add('DELETE', '/cargos/{id}', [CargosController::class, 'delete']);
 
