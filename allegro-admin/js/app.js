@@ -28,10 +28,10 @@ function bindNav() {
       const view = e.target.dataset.view;
       if (view === "dashboard") await renderDashboard();
       if (view === "participantes") await renderParticipantes();
-      if (view === "profesores") renderPlaceholder("Profesores");
+      if (view === "profesores") await renderProfesores();
       if (view === "grupos") await renderGrupos();
       if (view === "asistencias") await renderAsistencias();
-      if (view === "pagos") renderPlaceholder("Pagos");
+      if (view === "pagos") await renderPagos();
     });
   });
 
